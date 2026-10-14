@@ -1,0 +1,30 @@
+# Environnements virtuels
+venv/
+.venv/
+env/
+ENV/
+
+# Bytecode Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Distribution / packaging
+build/
+dist/
+*.egg-info/
+*.egg
+
+# Environnements de dev (PyCharm, VS Code...)
+.idea/
+.vscode/
+
+# Tests / couverture
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+
+# Si tu utilises un explorateur de fichiers : fichiers système
+Thumbs.db
+.DS_Store
