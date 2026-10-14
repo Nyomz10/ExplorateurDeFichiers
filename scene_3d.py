@@ -60,7 +60,7 @@ class GestureDesktopApp(ShowBase):
         ShowBase.__init__(self)
         # Maintient le ratio d'aspect correct quand la fenêtre est redimensionnée
         self.accept("window-event", self._on_window_resize)
-        self.setBackgroundColor(0.02, 0.02, 0.05, 1)
+        self.setBackgroundColor(0.004, 0.006, 0.018, 1)
         self.disableMouse()
 
         self.cam_h = 0
@@ -241,7 +241,6 @@ class GestureDesktopApp(ShowBase):
         self.was_fist = fist_now
 
 
-        #TODO Ca ne fonctionne pas, dès que la main gauche apparais ca considère que la main droite est a l'envers et donc reviens en arrière
         # --- Retour arrière avec la main DROITE ouverte qu'on retourne uniquement ---
         right_open = (
             right_hand
@@ -572,22 +571,27 @@ class GestureDesktopApp(ShowBase):
             ratio = wp.getXSize() / wp.getYSize()
             self.camLens.setAspectRatio(ratio)
 
-    def _animate_task(self, task):
-        self._anim_time += ClockObject.getGlobalClock().getDt()
+def _animate_task(self, task):
+    self._anim_time += ClockObject.getGlobalClock().getDt()
 
-        # Met à jour le temps pour l'animation du disque d'accrétion
-        if hasattr(self, "blackhole_shader_node"):
-            self.blackhole_shader_node.setShaderInput("time", self._anim_time)
+    # Temps du disque d'accretion
+    if hasattr(self, "blackhole_shader_node"):
+        self.blackhole_shader_node.setShaderInput("time", self._anim_time)
 
-        # Pulse léger sur chaque étoile/planète
-        for i, entry in enumerate(self.current_nodes):
-            if i == self.selected_index:
-                continue
-            base = entry["base_scale"]
-            pulse = 1.0 + 0.04 * math.sin(self._anim_time * 1.5 + i)
-            entry["node"].setScale(base * pulse)
+    # Scintillement des etoiles de fond
+    for star in getattr(self, "starfield", []):
+        star.setShaderInput("time", self._anim_time)
 
-        return task.cont
+    # Pulse leger + temps pour chaque planete
+    for i, entry in enumerate(self.current_nodes):
+        entry["node"].setShaderInput("time", self._anim_time)
+        if i == self.selected_index:
+            continue
+        base = entry["base_scale"]
+        pulse = 1.0 + 0.04 * math.sin(self._anim_time * 1.5 + i)
+        entry["node"].setScale(base * pulse)
+
+    return task.cont
 
 
 app = GestureDesktopApp()

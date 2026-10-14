@@ -5,6 +5,26 @@ from panda3d.core import (
 import math
 import random
 
+# Cache : chaque shader n'est compile qu'une seule fois
+_SHADER_CACHE = {}
+
+
+def _load_cached(name, vertex, fragment):
+    if name not in _SHADER_CACHE:
+        _SHADER_CACHE[name] = Shader.load(Shader.SL_GLSL, vertex=vertex, fragment=fragment)
+    return _SHADER_CACHE[name]
+
+
+def load_sphere_shader():
+    return _load_cached("sphere", "shaders/sphere.vert", "shaders/sphere.frag")
+
+
+def load_glow_shader():
+    return _load_cached("glow", "shaders/glow.vert", "shaders/glow.frag")
+
+
+def load_blackhole_shader():
+    return _load_cached("blackhole", "shaders/blackhole.vert", "shaders/blackhole.frag")
 
 def load_sphere_shader():
     # Shader GLSL pour les sphères : Fresnel + Phong + rim light
@@ -80,7 +100,7 @@ def create_glow(render, loader, parent_np, color, scale_factor=2.5):
 
     r, g, b, _ = color
     glow_np.setShader(glow_shader)
-    glow_np.setShaderInput("glow_color", r, g, b, 0.55)
+    glow_np.setShaderInput("glow_color", r, g, b, 0.45)
     glow_np.setTransparency(TransparencyAttrib.MAlpha)
     glow_np.setLightOff()
     glow_np.setTwoSided(True)
