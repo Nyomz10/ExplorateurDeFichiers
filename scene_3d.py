@@ -1,5 +1,5 @@
 from direct.showbase.ShowBase import ShowBase
-from panda3d.core import PointLight, AmbientLight, LColor, TextNode, LPoint3, ClockObject, TransparencyAttrib
+from panda3d.core import PointLight, AmbientLight, LColor, TextNode, LPoint3, ClockObject, TransparencyAttrib, SamplerState
 from direct.gui.OnscreenText import OnscreenText
 import math
 import cv2
@@ -7,7 +7,14 @@ import mediapipe as mp
 import file_system
 import gestures
 import shaders
+import random
 
+
+PLANET_TEXTURES = [
+    "assets/mercury.jpg", "assets/venus.jpg", "assets/earth.jpg",
+    "assets/mars.jpg", "assets/jupiter.jpg", "assets/saturn.jpg",
+    "assets/uranus.jpg", "assets/neptune.jpg", "assets/moon.jpg",
+]
 
 ORBIT_RADIUS_BY_DEPTH = [13, 6, 3]
 MAX_ITEMS_PER_LEVEL = 15
@@ -289,6 +296,8 @@ class GestureDesktopApp(ShowBase):
         z = self.cam_dist * math.sin(rad_p)
         self.camera.setPos(self.current_center + LPoint3(x, y, z))
         self.camera.lookAt(self.current_center)
+        if hasattr(self, "skybox"):
+            self.skybox.setPos(self.camera.getPos(self.render))
 
     def _animate_camera_to(self, new_center, new_dist, duration=1.0):
         start_center = LPoint3(self.current_center)
@@ -460,35 +469,6 @@ class GestureDesktopApp(ShowBase):
         return (x, y, z)
 
     def _build_level(self, entries, center, is_root, depth=0, label="", offset=0, reset_camera_center=True):
-        self.current_nodes = []
-        self.selected_index = -1
-        self.breadcrumb.setText(label)
-
-        # Mémorise le niveau pour permettre la pagination
-        self.level_full_entries = entries
-        self.level_center = LPoint3(center)
-        self.level_is_root = is_root
-        self.level_depth = depth
-        self.level_label = label
-        self.level_offset = offset
-
-        if is_root:
-            self._create_black_hole(center)
-
-        page = entries[offset:offset + PAGE_SIZE]
-        remaining = len(entries) - (offset + len(page))
-
-        base_radius = ORBIT_RADIUS_BY_DEPTH[min(depth, len(ORBIT_RADIUS_BY_DEPTH) - 1)]
-        total_slots = len(page) + (1 if remaining > 0 else 0)
-        radius = max(base_radius, total_slots * 0.9)
-        depth_scale = max(0.4, 1 - depth * 0.2)
-
-        for i, item in enumerate(page):
-            x, y, z = self._fibonacci_sphere_point(i, total_slots, radius)
-            x += center.x
-            y += center.y
-            z += center.z
-
             is_folder = item["type"] == "folder"
             color = (0.4, 0.8, 1.0, 1) if is_folder else get_file_color(item["name"])
             base_scale = (0.7 if is_folder else 0.45) * depth_scale
@@ -497,66 +477,24 @@ class GestureDesktopApp(ShowBase):
             node.reparentTo(self.render)
             node.setPos(x, y, z)
             node.setScale(base_scale)
-            node.setColor(*color)
-            node.setLightOff()
-            # Shader sphère : Fresnel + Phong pour un rendu volumétrique
-            sphere_shader = shaders.load_sphere_shader()
-            node.setShader(sphere_shader)
-            node.setShaderInput("sphere_color", *color)
-            node.setShaderInput("time", 0.0)
-            # Halo de lueur autour de chaque étoile/planète
-            shaders.create_glow(self.render, self.loader, node, color, scale_factor=2.0)
-
-            tn = TextNode(f"label_{item['name']}")
-            tn.setText(item["name"])
-            tn.setTextColor(0.6, 1.0, 1.0, 1) if is_folder else tn.setTextColor(1.0, 0.8, 0.5, 1)
-            tn.setAlign(TextNode.ACenter)
-            label_np = node.attachNewNode(tn)
-            label_np.setScale(0.35)
-            label_np.setPos(0, 0, 1.1)
-            label_np.setBillboardPointEye()
-
-            self.current_nodes.append({
-                "node": node, "name": item["name"], "type": item["type"],
-                "path": item.get("path"), "color": color, "base_scale": base_scale,
-                "label_np": label_np,
-            })
-
-        # Indicateur de pagination : sphère grise avec le nombre d'éléments restants
-        if remaining > 0:
-            x, y, z = self._fibonacci_sphere_point(len(page), total_slots, radius)
-            x += center.x
-            y += center.y
-            z += center.z
-
-            color = (0.6, 0.6, 0.6, 1)
-            base_scale = 0.55 * depth_scale
-
-            node = self.loader.loadModel("models/misc/sphere")
-            node.reparentTo(self.render)
-            node.setPos(x, y, z)
-            node.setScale(base_scale)
-            node.setColor(*color)
             node.setLightOff()
 
-            tn = TextNode("label_more")
-            tn.setText(f"+{remaining} autres")
-            tn.setTextColor(0.8, 0.8, 0.8, 1)
-            tn.setAlign(TextNode.ACenter)
-            label_np = node.attachNewNode(tn)
-            label_np.setScale(0.35)
-            label_np.setPos(0, 0, 1.1)
-            label_np.setBillboardPointEye()
-
-            self.current_nodes.append({
-                "node": node, "name": "more", "type": "more",
-                "path": None, "color": color, "base_scale": base_scale,
-                "label_np": label_np,
-            })
-
-        if self.current_nodes:
-            self.selected_index = 0
-            self._set_highlight(self.current_nodes[0], True)
+            if is_folder:
+                # Chaque dossier recoit une vraie texture planetaire
+                # (stable pour un meme nom de dossier)
+                idx = sum(ord(c) for c in item["name"]) % len(PLANET_TEXTURES)
+                tex = self.loader.loadTexture(PLANET_TEXTURES[idx])
+                tex.setMinfilter(SamplerState.FTM_linear_mipmap_linear)
+                node.setTexture(tex)
+                node.setShaderAuto()  # eclairage standard avec la texture
+                # Rotation lente pour que la planete soit vivante
+                node.setHpr(random.randint(0, 360), random.randint(-20, 20), 0)
+            else:
+                node.setColor(*color)
+                sphere_shader = shaders.load_sphere_shader()
+                node.setShader(sphere_shader)
+                node.setShaderInput("sphere_color", *color)
+                node.setShaderInput("time", 0.0)
 
     def _create_black_hole(self, center):
         # Trou noir avec shader GLSL et disque d'accrétion animé
@@ -596,3 +534,4 @@ class GestureDesktopApp(ShowBase):
 
 app = GestureDesktopApp()
 app.run()
+

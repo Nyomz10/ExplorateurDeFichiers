@@ -185,3 +185,28 @@ def create_accretion_disk(render, loader, center, time_input=0.0):
     core.setLightOff()
 
     return bh, core
+
+from panda3d.core import (
+    CardMaker, TransparencyAttrib, Shader, ShaderAttrib,
+    LineSegs, LPoint3, TextureStage, SamplerState
+)
+
+
+def create_skybox(render, loader, texture_path="assets/milky_way.jpg"):
+    """Sphere geante invertee avec la texture voie lactee : fond immersif."""
+    skybox = loader.loadModel("models/misc/sphere")
+    skybox.reparentTo(render)
+    skybox.setScale(800)          # assez grand pour englober toute la scene
+    skybox.setLightOff()
+    skybox.setBin("background", 0)
+    skybox.setDepthWrite(False)
+    skybox.setTwoSided(True)      # on voit l'interieur de la sphere
+
+    tex = loader.loadTexture(texture_path)
+    tex.setMinfilter(SamplerState.FTM_linear_mipmap_linear)
+    tex.setWrapU(SamplerState.WM_repeat)
+    tex.setWrapV(SamplerState.WM_clamp)
+    skybox.setTexture(tex, 1)
+    skybox.setTexScale(1, 1, -1)  # inverse la texture (vue de l'interieur)
+    skybox.setTexGen(TextureStage.get_modulate(), RenderAttrib.M_decal_2d)
+    return skybox
