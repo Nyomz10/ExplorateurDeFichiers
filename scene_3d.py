@@ -571,27 +571,27 @@ class GestureDesktopApp(ShowBase):
             ratio = wp.getXSize() / wp.getYSize()
             self.camLens.setAspectRatio(ratio)
 
-def _animate_task(self, task):
-    self._anim_time += ClockObject.getGlobalClock().getDt()
+    def _animate_task(self, task):
+        self._anim_time += ClockObject.getGlobalClock().getDt()
 
-    # Temps du disque d'accretion
-    if hasattr(self, "blackhole_shader_node"):
-        self.blackhole_shader_node.setShaderInput("time", self._anim_time)
+        # Temps du disque d'accretion
+        if hasattr(self, "blackhole_shader_node"):
+            self.blackhole_shader_node.setShaderInput("time", self._anim_time)
 
-    # Scintillement des etoiles de fond
-    for star in getattr(self, "starfield", []):
-        star.setShaderInput("time", self._anim_time)
+        # Scintillement des etoiles de fond
+        for star in getattr(self, "starfield", []):
+            star.setShaderInput("time", self._anim_time)
 
-    # Pulse leger + temps pour chaque planete
-    for i, entry in enumerate(self.current_nodes):
-        entry["node"].setShaderInput("time", self._anim_time)
-        if i == self.selected_index:
-            continue
-        base = entry["base_scale"]
-        pulse = 1.0 + 0.04 * math.sin(self._anim_time * 1.5 + i)
-        entry["node"].setScale(base * pulse)
+        # Pulse leger + temps pour chaque planete
+        for i, entry in enumerate(self.current_nodes):
+            entry["node"].setShaderInput("time", self._anim_time)
+            if i == self.selected_index:
+                continue
+            base = entry["base_scale"]
+            pulse = 1.0 + 0.04 * math.sin(self._anim_time * 1.5 + i)
+            entry["node"].setScale(base * pulse)
 
-    return task.cont
+        return task.cont
 
 
 app = GestureDesktopApp()
