@@ -4,6 +4,11 @@ from panda3d.core import (
 )
 import math
 import random
+import glob
+
+ROCK_MODELS = sorted(glob.glob("assets/models/Rock*.glb"))
+SPACESHIP_MODELS = sorted(glob.glob("assets/models/Spaceship*.glb"))
+BACKGROUND_MODELS = ROCK_MODELS + SPACESHIP_MODELS
 
 # Cache des shaders : chaque shader GLSL n'est compilé qu'une seule fois
 _SHADER_CACHE = {}
@@ -32,41 +37,33 @@ def load_blackhole_shader():
     return _load_cached("blackhole", "shaders/blackhole.vert", "shaders/blackhole.frag")
 
 
-def create_starfield(render, loader, num_stars=1200):
-    # Champ d'étoiles de fond : petites sphères avec shader volumétrique
-    stars         = []
-    sphere_shader = load_sphere_shader()
 
-    for _ in range(num_stars):
+
+def create_starfield(render, loader, num_stars=250):
+    """Champ de fond : asteroïdes et vaisseaux eparpillés au loin."""
+    objs = []
+    for i in range(num_stars):
         theta = random.uniform(0, math.pi * 2)
-        phi   = random.uniform(0, math.pi)
-        r     = random.uniform(300, 500)
-        x     = r * math.sin(phi) * math.cos(theta)
-        y     = r * math.sin(phi) * math.sin(theta)
-        z     = r * math.cos(phi)
+        phi = random.uniform(0, math.pi)
+        r = random.uniform(300, 500)
+        x = r * math.sin(phi) * math.cos(theta)
+        y = r * math.sin(phi) * math.sin(theta)
+        z = r * math.cos(phi)
 
-        size       = random.uniform(0.15, 0.6)
-        brightness = random.uniform(0.5, 1.0)
-        color      = random.choice([
-            (brightness,      brightness,       brightness,       1.0),
-            (brightness*0.7,  brightness*0.85,  brightness,       1.0),
-            (brightness,      brightness*0.95,  brightness*0.7,   1.0),
-        ])
-
-        star = loader.loadModel("models/misc/sphere")
-        star.reparentTo(render)
-        star.setPos(x, y, z)
-        star.setScale(size)
-        star.setLightOff()
-        star.setShader(sphere_shader)
-        star.setShaderInput("sphere_color", *color)
-        star.setShaderInput("time", 0.0)
-        stars.append(star)
-
-    return stars
+        if not BACKGROUND_MODELS:
+            break
+        obj = loader.loadModel(random.choice(BACKGROUND_MODELS))
+        obj.reparentTo(render)
+        obj.setPos(x, y, z)
+        obj.setScale(random.uniform(0.8, 2.5))
+        obj.setLightOff()
+        obj.setHpr(random.randint(0, 360), random.randint(0, 360), random.randint(0, 360))
+        obj.setColorScale(1, 1, 1, 1)   # tu peux teinter (ex. 0.6,0.7,1 pour un bleu froid)
+        objs.append(obj)
+    return objs
 
 
-def create_skybox(render, loader, texture_path="assets/nasa_starmap.jpg"):
+def create_skybox(render, loader, texture_path="assets/milky_way.jpg"):
     # Tentative de skybox voie lactée — silencieuse si la texture est absente
     try:
         skybox = loader.loadModel("models/misc/sphere")
@@ -85,6 +82,8 @@ def create_skybox(render, loader, texture_path="assets/nasa_starmap.jpg"):
         else:
             # Pas de texture : fond sombre uni
             skybox.setColor(0.004, 0.006, 0.018, 1)
+            skybox.setTexture(tex)
+            skybox.setColorScale(1.3, 1.3, 1.4, 1)  # léger boost de luminosité
 
         return skybox
     except Exception:
@@ -173,3 +172,44 @@ def create_accretion_disk(render, loader, center, time_input=0.0):
     core.setLightOff()
 
     return bh, core
+
+def create_nebula(render, loader, textures, num=14):
+    """Grands voiles de gaz colores en arriere-plan, superposes a la skybox."""
+    nebulas = []
+    import random as rnd
+    for i in range(num):
+        tex_path = rnd.choice(textures)
+        cm = CardMaker("nebula")
+        cm.setFrame(-1, 1, -1, 1)
+        cm.setUvRange((0, 0), (1, 1))
+        np = render.attachNewNode(cm.generate())
+
+        theta = rnd.uniform(0, math.pi * 2)
+        phi = rnd.uniform(-0.6, 0.6)
+        dist = rnd.uniform(500, 700)
+        np.setPos(dist * math.cos(phi) * math.cos(theta),
+                  dist * math.cos(phi) * math.sin(theta),
+                  dist * math.sin(phi))
+        np.lookAt(0, 0, 0)
+
+        tint = rnd.choice([
+            (0.9, 0.3, 0.9),   # violet
+            (0.3, 0.4, 1.0),   # bleu
+            (1.0, 0.4, 0.7),   # rose
+            (0.4, 0.9, 0.8),   # turquoise
+        ])
+        np.setColorScale(tint[0], tint[1], tint[2], 1)
+        np.setTransparency(TransparencyAttrib.MAlpha)
+        np.setAlphaScale(rnd.uniform(0.25, 0.5))
+        np.setScale(rnd.uniform(150, 300))
+        np.setLightOff()
+        np.setBin("background", 1)      # derriere tout, devant la skybox
+        np.setDepthWrite(False)
+        np.setDepthTest(False)
+        np.setBillboardPointEye()
+
+        tex = loader.loadTexture(tex_path)
+        tex.setMinfilter(SamplerState.FT_linear_mipmap_linear)
+        np.setTexture(tex)
+        nebulas.append(np)
+    return nebulas

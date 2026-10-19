@@ -11,12 +11,19 @@ import file_system
 import gestures
 import shaders
 import random
+import random
+import glob
+import os
 
-PLANET_TEXTURES = [
-    "assets/mercury.jpg", "assets/venus.jpg", "assets/earth.jpg",
-    "assets/mars.jpg",    "assets/jupiter.jpg", "assets/saturn.jpg",
-    "assets/uranus.jpg",  "assets/neptune.jpg", "assets/moon.jpg",
-]
+
+def _collect_models(pattern):
+    """Liste les .glb d'un motif, triée, avec repli sur le modele de base."""
+    files = sorted(glob.glob(f"assets/models/{pattern}"))
+    return files if files else []
+
+FOLDER_MODELS = _collect_models("Planet*.glb")      # dossiers
+FILE_MODELS = _collect_models("Rock*.glb")          # fichiers
+MORE_MODELS = _collect_models("Spaceship*.glb")     # indicateur pagination
 
 ORBIT_RADIUS_BY_DEPTH = [13, 6, 3]
 MAX_ITEMS_PER_LEVEL   = 15
@@ -107,6 +114,13 @@ class GestureDesktopApp(ShowBase):
 
         # Skybox voie lactée
         self.skybox = shaders.create_skybox(self.render, self.loader)
+        self.nebulas = shaders.create_nebula(self.render, self.loader, [
+            "assets/jupiter.jpg", "assets/saturn.jpg",
+            "assets/neptune.jpg", "assets/venus.jpg",
+        ])
+
+        for neb in getattr(self, "nebulas", []):
+            neb.setPos(self.camera.getPos(self.render))
 
         # Contrôles clavier de secours
         for key, axis, delta in [
@@ -440,24 +454,18 @@ class GestureDesktopApp(ShowBase):
     # ---------- Construction des niveaux ----------
 
     def _setup_lights(self):
-        # Lumière ambiante très faible pour que le côté sombre reste sombre
-        amb = AmbientLight("ambient")
-        amb.setColor(LColor(0.05, 0.05, 0.1, 1))
-        self.render.setLight(self.render.attachNewNode(amb))
-
-        # Lumière principale forte depuis le centre (simule une étoile)
-        sun = PointLight("sun")
-        sun.setColor(LColor(2.5, 2.2, 1.8, 1))
-        sun.setAttenuation((1, 0, 0))
+        # Lumiere "soleil" assez forte, placee a une vraie distance
+        sun = DirectionalLight("sun")
+        sun.setColor(LColor(1.0, 0.95, 0.85, 1))
         sun_np = self.render.attachNewNode(sun)
-        sun_np.setPos(0, 0, 0)
+        sun_np.setHpr(-45, -35, 0)
         self.render.setLight(sun_np)
 
-        # Lumière de remplissage froide (côté opposé) pour éviter le noir total
+        # Remplissage froid pour ne jamais avoir de face tout a fait noire
         fill = DirectionalLight("fill")
-        fill.setColor(LColor(0.1, 0.1, 0.3, 1))
+        fill.setColor(LColor(0.25, 0.3, 0.45, 1))
         fill_np = self.render.attachNewNode(fill)
-        fill_np.setHpr(180, -30, 0)
+        fill_np.setHpr(135, 25, 0)
         self.render.setLight(fill_np)
 
     def _fibonacci_sphere_point(self, index, total, radius):
@@ -501,28 +509,35 @@ class GestureDesktopApp(ShowBase):
         sphere_shader = shaders.load_sphere_shader()
 
         for i, item in enumerate(page):
-            ox, oy, oz = self._fibonacci_sphere_point(i, total_slots, radius)
-            x, y, z    = center.x+ox, center.y+oy, center.z+oz
+            is_folder = item["type"] == "folder"
+            color = (0.4, 0.8, 1.0, 1) if is_folder else get_file_color(item["name"])
+            base_scale = (1.0 if is_folder else 0.55) * depth_scale
 
-            is_folder  = item["type"] == "folder"
-            color      = (0.4, 0.8, 1.0, 1) if is_folder else get_file_color(item["name"])
-            base_scale = (0.7 if is_folder else 0.45) * depth_scale
-
-            node = self.loader.loadModel("models/misc/sphere")
-            node.reparentTo(self.render)
-            node.setPos(x, y, z)
-            node.setScale(base_scale)
-
-            if is_folder:
-                idx = sum(ord(c) for c in item["name"]) % len(PLANET_TEXTURES)
-                tex = self.loader.loadTexture(PLANET_TEXTURES[idx])
-                tex.setMinfilter(SamplerState.FT_linear_mipmap_linear)
-                node.setTexture(tex)
-                # Active l'éclairage automatique (retire setLightOff pour les planètes texturées)
-                node.setShaderAuto()
-                node.setHpr(random.randint(0, 360), random.randint(-20, 20), 0)
+            # Modele 3D choisi de facon stable selon le nom (toujours le meme objet)
+            seed = sum(ord(c) for c in item["name"])
+            if is_folder and FOLDER_MODELS:
+                model_path = FOLDER_MODELS[seed % len(FOLDER_MODELS)]
+            elif not is_folder and FILE_MODELS:
+                model_path = FILE_MODELS[seed % len(FILE_MODELS)]
             else:
+                model_path = None
+
+            if model_path:
+                node = self.loader.loadModel(model_path)
+                node.reparentTo(self.render)
+                node.setPos(x, y, z)
+                node.setScale(base_scale)
+                node.setLightOff()          # les modeles ont des textures eclairantes integrees
+                node.setHpr(seed % 360, (seed // 7) % 40 - 20, 0)
+                node.setColorScale(*color, 1)   # teinte le modele selon dossier/type de fichier
+            else:
+                node = self.loader.loadModel("models/misc/sphere")
+                node.reparentTo(self.render)
+                node.setPos(x, y, z)
+                node.setScale(base_scale)
+                node.setLightOff()
                 node.setColor(*color)
+                sphere_shader = shaders.load_sphere_shader()
                 node.setShader(sphere_shader)
                 node.setShaderInput("sphere_color", *color)
                 node.setShaderInput("time", 0.0)
@@ -561,11 +576,12 @@ class GestureDesktopApp(ShowBase):
             color      = (0.6, 0.6, 0.6, 1)
             base_scale = 0.55 * depth_scale
 
-            node = self.loader.loadModel("models/misc/sphere")
+            node = self.loader.loadModel(MORE_MODELS[0] if MORE_MODELS else "models/misc/sphere")
             node.reparentTo(self.render)
             node.setPos(x, y, z)
-            node.setScale(base_scale)
-            node.setColor(*color)
+            node.setScale(0.6 * depth_scale)
+            node.setLightOff()
+            node.setColorScale(0.8, 0.8, 0.8, 1)
             node.setShader(sphere_shader)
             node.setShaderInput("sphere_color", *color)
             node.setShaderInput("time", 0.0)
@@ -612,19 +628,30 @@ class GestureDesktopApp(ShowBase):
         for star in getattr(self, "starfield", []):
             star.setShaderInput("time", self._anim_time)
 
-        # Pulse léger sur les planètes/étoiles courantes
-        for i, entry in enumerate(self.current_nodes):
-            try:
-                entry["node"].setShaderInput("time", self._anim_time)
-            except Exception:
-                pass
-            if i == self.selected_index:
-                continue
-            pulse = 1.0 + 0.04 * math.sin(self._anim_time * 1.5 + i)
-            entry["node"].setScale(entry["base_scale"] * pulse)
+        dt = ClockObject.getGlobalClock().getDt()
+        for entry in self.current_nodes:
+            entry["node"].setShaderInput("time", self._anim_time)
+            if entry["type"] == "folder":
+                entry["node"].setH(entry["node"].getH() + dt * 5)
+            elif entry["type"] == "file":
+                entry["node"].setHpr(entry["node"].getH() + dt * 8,
+                                     entry["node"].getP() + dt * 3, 0)
 
         return task.cont
 
 
+    def _create_black_hole(self, center):
+        self.blackhole_shader_node, _ = shaders.create_accretion_disk(
+            self.render, self.loader, center
+        )
+        # Station orbitale autour du trou noir
+        station = self.loader.loadModel("assets/models/Base Large.glb")
+        station.reparentTo(self.render)
+        station.setPos(center + LPoint3(0, 12, 4))
+        station.setScale(1.5)
+        station.setLightOff()
+        station.setHpr(20, 0, 0)
+
 app = GestureDesktopApp()
 app.run()
+
