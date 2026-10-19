@@ -1,77 +1,56 @@
 from panda3d.core import (
-    CardMaker, TransparencyAttrib, Shader, ShaderAttrib,
-    LineSegs, LPoint3
+    CardMaker, TransparencyAttrib, Shader,
+    LineSegs, LPoint3, SamplerState
 )
 import math
 import random
 
-# Cache : chaque shader n'est compile qu'une seule fois
+# Cache des shaders : chaque shader GLSL n'est compilé qu'une seule fois
 _SHADER_CACHE = {}
 
 
 def _load_cached(name, vertex, fragment):
     if name not in _SHADER_CACHE:
-        _SHADER_CACHE[name] = Shader.load(Shader.SL_GLSL, vertex=vertex, fragment=fragment)
+        _SHADER_CACHE[name] = Shader.load(
+            Shader.SL_GLSL, vertex=vertex, fragment=fragment
+        )
     return _SHADER_CACHE[name]
 
 
 def load_sphere_shader():
+    # Shader sphère : Fresnel + Phong + rim light pour un rendu volumétrique
     return _load_cached("sphere", "shaders/sphere.vert", "shaders/sphere.frag")
 
 
 def load_glow_shader():
+    # Shader halo : falloff gaussien rond (pas de carré visible)
     return _load_cached("glow", "shaders/glow.vert", "shaders/glow.frag")
 
 
 def load_blackhole_shader():
+    # Shader trou noir : Fresnel + disque d'accrétion animé
     return _load_cached("blackhole", "shaders/blackhole.vert", "shaders/blackhole.frag")
-
-def load_sphere_shader():
-    # Shader GLSL pour les sphères : Fresnel + Phong + rim light
-    return Shader.load(
-        Shader.SL_GLSL,
-        vertex="shaders/sphere.vert",
-        fragment="shaders/sphere.frag"
-    )
-
-
-def load_glow_shader():
-    # Shader GLSL pour les halos : falloff gaussien rond
-    return Shader.load(
-        Shader.SL_GLSL,
-        vertex="shaders/glow.vert",
-        fragment="shaders/glow.frag"
-    )
-
-
-def load_blackhole_shader():
-    # Shader GLSL pour le trou noir : Fresnel + disque d'accrétion animé
-    return Shader.load(
-        Shader.SL_GLSL,
-        vertex="shaders/blackhole.vert",
-        fragment="shaders/blackhole.frag"
-    )
 
 
 def create_starfield(render, loader, num_stars=1200):
-    # Champ d'étoiles : petites sphères avec le shader sphère, sans les carrés billboard
-    stars = []
+    # Champ d'étoiles de fond : petites sphères avec shader volumétrique
+    stars         = []
     sphere_shader = load_sphere_shader()
 
-    for i in range(num_stars):
+    for _ in range(num_stars):
         theta = random.uniform(0, math.pi * 2)
-        phi = random.uniform(0, math.pi)
-        r = random.uniform(300, 500)
-        x = r * math.sin(phi) * math.cos(theta)
-        y = r * math.sin(phi) * math.sin(theta)
-        z = r * math.cos(phi)
+        phi   = random.uniform(0, math.pi)
+        r     = random.uniform(300, 500)
+        x     = r * math.sin(phi) * math.cos(theta)
+        y     = r * math.sin(phi) * math.sin(theta)
+        z     = r * math.cos(phi)
 
-        size = random.uniform(0.15, 0.6)
+        size       = random.uniform(0.15, 0.6)
         brightness = random.uniform(0.5, 1.0)
-        color = random.choice([
-            (brightness, brightness, brightness, 1.0),
-            (brightness * 0.7, brightness * 0.85, brightness, 1.0),
-            (brightness, brightness * 0.95, brightness * 0.7, 1.0),
+        color      = random.choice([
+            (brightness,      brightness,       brightness,       1.0),
+            (brightness*0.7,  brightness*0.85,  brightness,       1.0),
+            (brightness,      brightness*0.95,  brightness*0.7,   1.0),
         ])
 
         star = loader.loadModel("models/misc/sphere")
@@ -87,8 +66,33 @@ def create_starfield(render, loader, num_stars=1200):
     return stars
 
 
+def create_skybox(render, loader, texture_path="assets/nasa_starmap.jpg"):
+    # Tentative de skybox voie lactée — silencieuse si la texture est absente
+    try:
+        skybox = loader.loadModel("models/misc/sphere")
+        skybox.reparentTo(render)
+        skybox.setScale(800)
+        skybox.setLightOff()
+        skybox.setBin("background", 0)
+        skybox.setDepthWrite(False)
+        skybox.setTwoSided(True)
+
+        tex = loader.loadTexture(texture_path)
+        if tex:
+            tex.setMinfilter(SamplerState.FT_linear_mipmap_linear)
+            skybox.setTexture(tex, 1)
+            skybox.setTexScale(1, 1, -1)
+        else:
+            # Pas de texture : fond sombre uni
+            skybox.setColor(0.004, 0.006, 0.018, 1)
+
+        return skybox
+    except Exception:
+        return None
+
+
 def create_glow(render, loader, parent_np, color, scale_factor=2.5):
-    # Halo gaussien rond via shader GLSL (plus de carré visible)
+    # Halo gaussien rond via shader GLSL (pas de carré billboard visible)
     glow_shader = load_glow_shader()
 
     cm = CardMaker("glow")
@@ -113,56 +117,40 @@ def create_glow(render, loader, parent_np, color, scale_factor=2.5):
 
 
 def create_orbital_ring(render, parent_np, color, radius=1.6):
-    # Anneau orbital lumineux dessiné avec LineSegs
-    ls = LineSegs()
+    # Anneau orbital principal + second anneau incliné pour l'effet holographique
     r, g, b, _ = color
-    ls.setColor(r, g, b, 1.0)
-    ls.setThickness(2.0)
+    segments   = 80
 
-    segments = 80
-    for i in range(segments + 1):
-        angle = (i / segments) * math.pi * 2
-        x = math.cos(angle) * radius
-        z = math.sin(angle) * radius
-        if i == 0:
-            ls.moveTo(x, 0, z)
-        else:
-            ls.drawTo(x, 0, z)
-
-    ring_np = render.attachNewNode(ls.create())
-    ring_np.reparentTo(parent_np)
-    ring_np.setPos(0, 0, 0)
-    ring_np.setLightOff()
-
-    # Second anneau incliné pour l'effet holographique
-    ls2 = LineSegs()
-    ls2.setColor(r * 0.6, g * 0.6, b, 0.5)
-    ls2.setThickness(1.0)
-    for i in range(segments + 1):
-        angle = (i / segments) * math.pi * 2
-        x = math.cos(angle) * radius * 1.3
-        z = math.sin(angle) * radius * 1.3
-        if i == 0:
-            ls2.moveTo(x, 0, z)
-        else:
-            ls2.drawTo(x, 0, z)
-
-    ring2_np = render.attachNewNode(ls2.create())
-    ring2_np.reparentTo(parent_np)
-    ring2_np.setPos(0, 0, 0)
-    ring2_np.setHpr(0, 45, 0)
-    ring2_np.setLightOff()
+    def make_ring(r_main, r_val, g_val, b_val, alpha, thickness, tilt=0):
+        ls = LineSegs()
+        ls.setColor(r_val, g_val, b_val, alpha)
+        ls.setThickness(thickness)
+        for i in range(segments + 1):
+            angle = (i / segments) * math.pi * 2
+            x = math.cos(angle) * r_main
+            z = math.sin(angle) * r_main
+            if i == 0:
+                ls.moveTo(x, 0, z)
+            else:
+                ls.drawTo(x, 0, z)
+        np = render.attachNewNode(ls.create())
+        np.reparentTo(parent_np)
+        np.setPos(0, 0, 0)
+        if tilt:
+            np.setHpr(0, tilt, 0)
+        np.setLightOff()
+        return np
 
     container = render.attachNewNode("ring_container")
-    ring_np.reparentTo(container)
-    ring2_np.reparentTo(container)
+    make_ring(radius,       r,     g,     b,     1.0, 2.0)
+    make_ring(radius * 1.3, r*0.6, g*0.6, b,     0.5, 1.0, tilt=45)
     container.reparentTo(parent_np)
 
     return container
 
 
 def create_accretion_disk(render, loader, center, time_input=0.0):
-    # Trou noir avec shader GLSL : Fresnel + disque d'accrétion animé
+    # Trou noir : sphère avec shader animé (Fresnel + disque d'accrétion)
     bh_shader = load_blackhole_shader()
 
     bh = loader.loadModel("models/misc/sphere")
@@ -176,7 +164,7 @@ def create_accretion_disk(render, loader, center, time_input=0.0):
     bh.setBin("transparent", 1)
     bh.setDepthWrite(False)
 
-    # Sphère noire centrale opaque (cœur du trou noir)
+    # Cœur noir opaque (masque le centre)
     core = loader.loadModel("models/misc/sphere")
     core.reparentTo(render)
     core.setPos(center)
@@ -185,28 +173,3 @@ def create_accretion_disk(render, loader, center, time_input=0.0):
     core.setLightOff()
 
     return bh, core
-
-from panda3d.core import (
-    CardMaker, TransparencyAttrib, Shader, ShaderAttrib,
-    LineSegs, LPoint3, TextureStage, SamplerState
-)
-
-
-def create_skybox(render, loader, texture_path="assets/milky_way.jpg"):
-    """Sphere geante invertee avec la texture voie lactee : fond immersif."""
-    skybox = loader.loadModel("models/misc/sphere")
-    skybox.reparentTo(render)
-    skybox.setScale(800)          # assez grand pour englober toute la scene
-    skybox.setLightOff()
-    skybox.setBin("background", 0)
-    skybox.setDepthWrite(False)
-    skybox.setTwoSided(True)      # on voit l'interieur de la sphere
-
-    tex = loader.loadTexture(texture_path)
-    tex.setMinfilter(SamplerState.FTM_linear_mipmap_linear)
-    tex.setWrapU(SamplerState.WM_repeat)
-    tex.setWrapV(SamplerState.WM_clamp)
-    skybox.setTexture(tex, 1)
-    skybox.setTexScale(1, 1, -1)  # inverse la texture (vue de l'interieur)
-    skybox.setTexGen(TextureStage.get_modulate(), RenderAttrib.M_decal_2d)
-    return skybox
