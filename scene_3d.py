@@ -11,7 +11,6 @@ import file_system
 import gestures
 import shaders
 import random
-import random
 import glob
 import os
 
@@ -515,6 +514,8 @@ class GestureDesktopApp(ShowBase):
 
             # Modele 3D choisi de facon stable selon le nom (toujours le meme objet)
             seed = sum(ord(c) for c in item["name"])
+            ox, oy, oz = self._fibonacci_sphere_point(i, total_slots, radius)
+            x, y, z    = center.x + ox, center.y + oy, center.z + oz
             if is_folder and FOLDER_MODELS:
                 model_path = FOLDER_MODELS[seed % len(FOLDER_MODELS)]
             elif not is_folder and FILE_MODELS:
@@ -582,9 +583,6 @@ class GestureDesktopApp(ShowBase):
             node.setScale(0.6 * depth_scale)
             node.setLightOff()
             node.setColorScale(0.8, 0.8, 0.8, 1)
-            node.setShader(sphere_shader)
-            node.setShaderInput("sphere_color", *color)
-            node.setShaderInput("time", 0.0)
 
             tn = TextNode("label_more")
             tn.setText(f"+{remaining} autres")

@@ -213,3 +213,4 @@ def create_nebula(render, loader, textures, num=14):
         np.setTexture(tex)
         nebulas.append(np)
     return nebulas
+
